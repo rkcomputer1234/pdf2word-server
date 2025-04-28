@@ -4,7 +4,6 @@ const axios = require('axios');
 const FormData = require('form-data');
 const cors = require('cors');
 const fs = require('fs');
-const path = require('path');
 
 const app = express();
 const upload = multer({ dest: 'uploads/' });
@@ -16,29 +15,38 @@ app.use(cors());
 
 app.post('/convert', upload.single('pdf'), async (req, res) => {
   try {
+    // 1. Start the task
     const startRes = await axios.post('https://api.ilovepdf.com/v1/start', {
       public_key: ILPDF_PUBLIC_KEY,
       tool: 'pdf2word'
     });
-
     const { server, task } = startRes.data;
 
-    // Upload file to ilovepdf server
+    // 2. Upload the file
     const formData = new FormData();
     formData.append('task', task);
     formData.append('file', fs.createReadStream(req.file.path));
 
-    await axios.post(`https://${server}/v1/upload`, formData, {
+    const uploadRes = await axios.post(`https://${server}/v1/upload`, formData, {
       headers: formData.getHeaders()
     });
 
-    // Process the task
+    // Important: get server_filename from upload response
+    const serverFilename = uploadRes.data.server_filename;
+
+    // 3. Process the file
     await axios.post(`https://${server}/v1/process`, {
       task,
-      tool: 'pdf2word'
+      tool: 'pdf2word',
+      files: [
+        {
+          server_filename: serverFilename,
+          filename: req.file.originalname
+        }
+      ]
     });
 
-    // Download the result
+    // 4. Download the result
     const downloadRes = await axios({
       method: 'get',
       url: `https://${server}/v1/download/${task}`,
@@ -48,7 +56,7 @@ app.post('/convert', upload.single('pdf'), async (req, res) => {
     res.setHeader('Content-Disposition', 'attachment; filename="converted.docx"');
     downloadRes.data.pipe(res);
 
-    // Delete uploaded file locally
+    // 5. Clean up
     fs.unlinkSync(req.file.path);
 
   } catch (error) {
