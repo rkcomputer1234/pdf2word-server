@@ -8,6 +8,12 @@ const { exec } = require('child_process');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Ensure 'uploads' directory exists
+const uploadDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir);
+}
+
 app.use(cors());
 const upload = multer({ dest: 'uploads/' });
 
@@ -30,8 +36,18 @@ app.post('/convert', upload.single('file'), (req, res) => {
     }
 
     res.download(outputPath, 'converted.docx', (downloadErr) => {
-      fs.unlinkSync(inputPath);
-      if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+      // Cleanup: Uploaded file और generated file को delete करना
+      try {
+        fs.unlinkSync(inputPath);
+        if (fs.existsSync(outputPath)) {
+          fs.unlinkSync(outputPath);
+        }
+      } catch (cleanupError) {
+        console.error('Error during cleanup:', cleanupError);
+      }
+      if (downloadErr) {
+        console.error('Download error:', downloadErr);
+      }
     });
   });
 });
