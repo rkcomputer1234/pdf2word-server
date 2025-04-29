@@ -1,57 +1,47 @@
 const express = require('express');
-const multer = require('multer');
 const cors = require('cors');
+const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
-const { exec } = require('child_process');
+const ilovepdf = require('@ilovepdf/ilovepdf-nodejs'); // install this
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-
-// Ensure 'uploads' directory exists
-const uploadDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir);
-}
+const upload = multer({ dest: 'uploads/' });
+const port = process.env.PORT || 3000;
 
 app.use(cors());
-const upload = multer({ dest: 'uploads/' });
+
+// iLovePDF API setup
+const ILovePdf = ilovepdf.default;
+const instance = new ILovePdf('project_public_bb17f868aaaae59de5bf8cc9baccf2dd_owXVJe5d27daa1a3b8de887ac1c2cf102e24a', 'en');
 
 app.get('/', (req, res) => {
-  res.send('PDF to Word API is running');
+  res.send('PDF to Word API is running with iLovePDF');
 });
 
-app.post('/convert', upload.single('file'), (req, res) => {
+app.post('/convert', upload.single('file'), async (req, res) => {
   if (!req.file) {
     return res.status(400).send('No file uploaded.');
   }
 
-  const inputPath = req.file.path;
-  const outputPath = path.join('uploads', path.parse(req.file.originalname).name + '.docx');
+  try {
+    const task = instance.newTask('pdf2word');
+    await task.start();
+    await task.addFile(req.file.path);
+    await task.process();
+    const filePath = path.join(__dirname, 'downloads', `${req.file.filename}.docx`);
+    await task.download(filePath);
 
-  exec(`libreoffice --headless --convert-to docx --outdir uploads ${inputPath}`, (err, stdout, stderr) => {
-    if (err) {
-      console.error('Conversion error:', err);
-      return res.status(500).send('Conversion failed.');
-    }
-
-    res.download(outputPath, 'converted.docx', (downloadErr) => {
-      // Cleanup: Uploaded file और generated file को delete करना
-      try {
-        fs.unlinkSync(inputPath);
-        if (fs.existsSync(outputPath)) {
-          fs.unlinkSync(outputPath);
-        }
-      } catch (cleanupError) {
-        console.error('Error during cleanup:', cleanupError);
-      }
-      if (downloadErr) {
-        console.error('Download error:', downloadErr);
-      }
+    res.download(filePath, 'converted.docx', () => {
+      fs.unlinkSync(req.file.path);
+      fs.unlinkSync(filePath);
     });
-  });
+  } catch (err) {
+    console.error('Conversion error:', err);
+    res.status(500).send('Conversion failed.');
+  }
 });
 
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+app.listen(port, () => {
+  console.log(`Server is running on port ${port}`);
 });
