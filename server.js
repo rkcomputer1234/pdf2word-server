@@ -6,27 +6,36 @@ const path = require('path');
 const { exec } = require('child_process');
 
 const app = express();
+const PORT = process.env.PORT || 3000;
+
 app.use(cors());
 const upload = multer({ dest: 'uploads/' });
 
-app.post('/convert', upload.single('file'), (req, res) => {
-  const inputPath = req.file.path;
-  const outputPath = inputPath + '.docx';
+app.get('/', (req, res) => {
+  res.send('PDF to Word API is running');
+});
 
-  exec(`libreoffice --headless --convert-to docx --outdir uploads ${inputPath}`, (err) => {
+app.post('/convert', upload.single('file'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).send('No file uploaded.');
+  }
+
+  const inputPath = req.file.path;
+  const outputPath = path.join('uploads', path.parse(req.file.originalname).name + '.docx');
+
+  exec(`libreoffice --headless --convert-to docx --outdir uploads ${inputPath}`, (err, stdout, stderr) => {
     if (err) {
       console.error('Conversion error:', err);
-      return res.status(500).send('Conversion failed');
+      return res.status(500).send('Conversion failed.');
     }
 
-    res.download(outputPath, 'converted.docx', (err) => {
+    res.download(outputPath, 'converted.docx', (downloadErr) => {
       fs.unlinkSync(inputPath);
-      fs.unlinkSync(outputPath);
+      if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
     });
   });
 });
 
-const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Server is running on port ${PORT}`);
 });
